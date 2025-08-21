@@ -1,160 +1,185 @@
-const { Client, Events, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, getVoiceConnection } = require('@discordjs/voice');
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
+const { Client, GatewayIntentBits, Partials, Collection, REST, Routes } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
+const express = require('express');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
-
-// /futa command - sends a random image
-const imagesFolder = path.join(__dirname, 'images');
-const imageFiles = fs.readdirSync(imagesFolder);
-
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  // -------- /futa --------
-  if (interaction.commandName === 'futa') {
-    if (imageFiles.length === 0) {
-      await interaction.reply({ content: 'No images found!' });
-      return;
-    }
-    const randomImage = imageFiles[Math.floor(Math.random() * imageFiles.length)];
-    await interaction.reply({ files: [path.join(imagesFolder, randomImage)] });
-  }
-
-  // -------- /mommy --------
-  if (interaction.commandName === 'mommy') {
-    const audioFiles = [
-      path.join(__dirname,  'mommy.mp3'),
-      path.join(__dirname,  'mommy2.mp3')
-    ];
-    const chosenAudio = audioFiles[Math.floor(Math.random() * audioFiles.length)];
-
-    // Try "Main" VC first, fallback to user VC
-    let mainChannel = interaction.guild.channels.cache.find(
-      ch => ch.type === 2 && ch.name.toLowerCase() === 'main'
-    );
-    if (!mainChannel) mainChannel = interaction.member.voice.channel;
-    if (!mainChannel) {
-      await interaction.reply({ content: 'No suitable voice channel found.' });
-      return;
-    }
-
-    const connection = joinVoiceChannel({
-      channelId: mainChannel.id,
-      guildId: mainChannel.guild.id,
-      adapterCreator: mainChannel.guild.voiceAdapterCreator
-    });
-
-    const player = createAudioPlayer();
-    const resource = createAudioResource(chosenAudio);
-
-    connection.subscribe(player);
-    player.play(resource);
-
-    await interaction.reply({ content: `Playing mommy audio in ${mainChannel.name}!` });
-
-    player.on(AudioPlayerStatus.Idle, () => connection.destroy());
-  }
-
-  // -------- /party --------
-  if (interaction.commandName === 'party') {
-    const partyChannel = interaction.guild.channels.cache.find(
-      ch => ch.type === 2 && ch.name.toLowerCase() === 'party'
-    );
-
-    if (!partyChannel) {
-      await interaction.reply({ content: 'Party VC not found.', flags: 64 });
-      return;
-    }
-
-    // Move everyone in VC to Party
-    interaction.guild.members.cache.forEach(member => {
-      if (member.voice.channel) member.voice.setChannel(partyChannel).catch(() => {});
-    });
-
-    const partyAudio = path.join(__dirname, 'party.mp3');
-    const connection = joinVoiceChannel({
-      channelId: partyChannel.id,
-      guildId: partyChannel.guild.id,
-      adapterCreator: partyChannel.guild.voiceAdapterCreator
-    });
-
-    const player = createAudioPlayer();
-    const resource = createAudioResource(partyAudio);
-
-    connection.subscribe(player);
-    player.play(resource);
-
-    await interaction.reply({ content: 'Party started! 🎉' });
-
-    player.on(AudioPlayerStatus.Idle, () => connection.destroy());
-  }
-
-  // -------- /noparty --------
-  if (interaction.commandName === 'noparty') {
-    const mainChannel = interaction.guild.channels.cache.find(
-      ch => ch.type === 2 && ch.name.toLowerCase() === 'main'
-    );
-
-    if (!mainChannel) {
-      await interaction.reply({ content: 'Main VC not found.', flags: 64 });
-      return;
-    }
-
-    // Move everyone in VC back to Main
-    interaction.guild.members.cache.forEach(member => {
-      if (member.voice.channel) member.voice.setChannel(mainChannel).catch(() => {});
-    });
-
-    // Disconnect any active voice connection
-    const connection = getVoiceConnection(interaction.guild.id);
-    if (connection) connection.destroy();
-
-    await interaction.reply({ content: 'Party ended, everyone moved back to Main VC.' });
-  }
-
-  if (interaction.commandName === 'mute') {
-  // Get all members currently in a voice channel
-  const membersInVC = interaction.guild.members.cache.filter(
-    member => member.voice.channel
-  );
-
-  if (membersInVC.size === 0) {
-    await interaction.reply({ content: 'No one is in a voice channel to mute!' });
-    return;
-  }
-
-  // Pick a random member
-  const randomMember = membersInVC.random();
-
-  // Server-mute the member
-  randomMember.voice.setMute(true).catch(() => {});
-
-  await interaction.reply({ content: `${randomMember.user.username} has been randomly muted! 🔇`});
-}
-
-if (interaction.commandName === 'unmute') {
-  // Get all members currently muted in a voice channel
-  const mutedMembers = interaction.guild.members.cache.filter(
-    member => member.voice.channel && member.voice.serverMute
-  );
-
-  if (mutedMembers.size === 0) {
-    await interaction.reply({ content: 'No muted members in a voice channel!' });
-    return;
-  }
-
-  // Pick a random member
-  const randomMember = mutedMembers.random();
-
-  // Unmute the member
-  randomMember.voice.setMute(false).catch(() => {});
-
-  await interaction.reply({ content: `${randomMember.user.username} has been unmuted! 🔊` });
-}
-
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
+// ---------- EXPRESS PING SERVER ----------
+const app = express();
+app.get('/', (req, res) => res.send('Elisa Bot is online!'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Ping server running on port ${PORT}`));
+
+// ---------- ASSET LOADING ----------
+const imagesPath = path.join(__dirname, 'images');
+let imageFiles = [];
+try {
+    imageFiles = fs.readdirSync(imagesPath);
+} catch (err) {
+    console.warn('Images folder not found, skipping image commands.');
+}
+
+const audioPath = path.join(__dirname, 'audio');
+let audioFiles = [];
+try {
+    audioFiles = fs.readdirSync(audioPath).filter(f => f.endsWith('.mp3'));
+} catch (err) {
+    console.warn('Audio folder not found, skipping voice commands.');
+}
+
+// ---------- SLASH COMMANDS ----------
+const commands = [
+    {
+        name: 'futa',
+        description: 'Sends a random image from the images folder.'
+    },
+    {
+        name: 'mommy',
+        description: 'Plays a random mommy audio in Main VC.'
+    },
+    {
+        name: 'party',
+        description: 'Moves everyone to Party VC and plays party.mp3'
+    },
+    {
+        name: 'noparty',
+        description: 'Moves everyone back to Main VC and disconnects bot.'
+    },
+    {
+        name: 'mute',
+        description: 'Mutes a random member in VC.'
+    },
+    {
+        name: 'unmute',
+        description: 'Unmutes a random member in VC.'
+    }
+];
+
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+    try {
+        await rest.put(
+            Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+            { body: commands }
+        );
+        console.log('Slash commands registered!');
+    } catch (err) {
+        console.error(err);
+    }
+})();
+
+// ---------- COMMAND HANDLER ----------
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+
+    const { commandName } = interaction;
+
+    // ---------- /futa ----------
+    if (commandName === 'futa') {
+        if (!imageFiles.length) return interaction.reply({ content: 'No images found.', ephemeral: false });
+        const chosen = imageFiles[Math.floor(Math.random() * imageFiles.length)];
+        await interaction.reply({ content: { files: [path.join(imagesPath, chosen)] }, ephemeral: false });
+    }
+
+    // ---------- /mommy ----------
+    if (commandName === 'mommy') {
+        if (!audioFiles.length) return interaction.reply({ content: 'No audio files found.', ephemeral: false });
+
+        const mainChannel = interaction.guild.channels.cache.find(
+            ch => ch.type === 2 && ch.name.toLowerCase() === 'main'
+        );
+        if (!mainChannel) return interaction.reply({ content: 'Main VC not found.', ephemeral: false });
+
+        const connection = joinVoiceChannel({
+            channelId: mainChannel.id,
+            guildId: mainChannel.guild.id,
+            adapterCreator: mainChannel.guild.voiceAdapterCreator
+        });
+
+        const player = createAudioPlayer();
+        const chosenAudio = audioFiles[Math.floor(Math.random() * audioFiles.length)];
+        const resource = createAudioResource(path.join(audioPath, chosenAudio));
+
+        connection.subscribe(player);
+        player.play(resource);
+
+        interaction.reply({ content: 'Playing mommy audio!', ephemeral: false });
+
+        player.on(AudioPlayerStatus.Idle, () => connection.destroy());
+    }
+
+    // ---------- /party ----------
+    if (commandName === 'party') {
+        const partyVC = interaction.guild.channels.cache.find(ch => ch.type === 2 && ch.name.toLowerCase() === 'party');
+        const mainVC = interaction.guild.channels.cache.find(ch => ch.type === 2 && ch.name.toLowerCase() === 'main');
+        if (!partyVC || !mainVC) return interaction.reply({ content: 'VCs not found.', ephemeral: false });
+
+        const members = mainVC.members.filter(m => !m.user.bot);
+        for (const [id, member] of members) await member.voice.setChannel(partyVC);
+
+        const connection = joinVoiceChannel({
+            channelId: partyVC.id,
+            guildId: partyVC.guild.id,
+            adapterCreator: partyVC.guild.voiceAdapterCreator
+        });
+        const player = createAudioPlayer();
+        const partyAudioPath = path.join(audioPath, 'party.mp3');
+        if (fs.existsSync(partyAudioPath)) {
+            player.play(createAudioResource(partyAudioPath));
+            connection.subscribe(player);
+            player.on(AudioPlayerStatus.Idle, () => connection.destroy());
+        }
+
+        interaction.reply({ content: 'Party time! 🎉', ephemeral: false });
+    }
+
+    // ---------- /noparty ----------
+    if (commandName === 'noparty') {
+        const mainVC = interaction.guild.channels.cache.find(ch => ch.type === 2 && ch.name.toLowerCase() === 'main');
+        const partyVC = interaction.guild.channels.cache.find(ch => ch.type === 2 && ch.name.toLowerCase() === 'party');
+        if (!mainVC || !partyVC) return interaction.reply({ content: 'VCs not found.', ephemeral: false });
+
+        const members = partyVC.members.filter(m => !m.user.bot);
+        for (const [id, member] of members) await member.voice.setChannel(mainVC);
+
+        interaction.reply({ content: 'Party over. Back to Main VC.', ephemeral: false });
+    }
+
+    // ---------- /mute ----------
+    if (commandName === 'mute') {
+        const mainVC = interaction.guild.channels.cache.find(ch => ch.type === 2 && ch.members.size > 1);
+        if (!mainVC) return interaction.reply({ content: 'No members to mute.', ephemeral: false });
+
+        const members = mainVC.members.filter(m => !m.user.bot);
+        const memberArray = Array.from(members.values());
+        const target = memberArray[Math.floor(Math.random() * memberArray.length)];
+        await target.voice.setMute(true);
+        interaction.reply({ content: `Muted ${target.user.tag}`, ephemeral: false });
+    }
+
+    // ---------- /unmute ----------
+    if (commandName === 'unmute') {
+        const mainVC = interaction.guild.channels.cache.find(ch => ch.type === 2 && ch.members.size > 1);
+        if (!mainVC) return interaction.reply({ content: 'No members to unmute.', ephemeral: false });
+
+        const members = mainVC.members.filter(m => !m.user.bot);
+        const memberArray = Array.from(members.values());
+        const target = memberArray[Math.floor(Math.random() * memberArray.length)];
+        await target.voice.setMute(false);
+        interaction.reply({ content: `Unmuted ${target.user.tag}`, ephemeral: false });
+    }
+});
+
+// ---------- LOGIN ----------
 client.login(process.env.DISCORD_TOKEN);
