@@ -1,67 +1,60 @@
-// index.js
-require('dotenv').config(); // Only for local testing
-const fs = require('fs');
-const path = require('path');
-const express = require('express');
-const { Client, GatewayIntentBits } = require('discord.js');
+require('dotenv').config();
+const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 
-// ----------------- Environment Variables -----------------
-const TOKEN = process.env.DISCORD_TOKEN;
-const PORT = process.env.PORT || 10000;
+const TOKEN = process.env.BOT_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID; // your bot's ID
+const GUILD_ID = process.env.GUILD_ID;   // optional: for testing in a single server
 
-if (!TOKEN) {
-    console.error('⚠️ DISCORD_TOKEN not set! Set it in environment variables.');
-    process.exit(1);
-}
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-// ----------------- Discord Bot Setup -----------------
-const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates]
+// --- Register slash commands ---
+const commands = [
+    {
+        name: 'ping',
+        description: 'Replies with Pong!'
+    },
+    {
+        name: 'hello',
+        description: 'Say hello to the bot'
+    }
+];
+
+const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+(async () => {
+    try {
+        console.log('🔄 Registering commands...');
+        // Use GUILD_ID for testing only, otherwise omit for global commands
+        await rest.put(
+            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+            { body: commands }
+        );
+        console.log('✅ Commands registered!');
+    } catch (err) {
+        console.error(err);
+    }
+})();
+
+// --- Slash command handling ---
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+
+    if (interaction.commandName === 'ping') {
+        await interaction.reply('Pong!');
+    }
+    if (interaction.commandName === 'hello') {
+        await interaction.reply(`Hello, ${interaction.user.username}!`);
+    }
 });
 
-client.once('ready', () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-});
-
-// Handle login errors
-client.login(TOKEN).catch(err => {
-    console.error('❌ Failed to login. Check your token!', err);
-    process.exit(1);
-});
-
-// ----------------- Safe folder access -----------------
-const IMAGES_DIR = path.join(__dirname, 'images');
-const AUDIO_DIR = path.join(__dirname, 'audio');
-
-let images = [];
-let audioFiles = [];
-
-try {
-    if (fs.existsSync(IMAGES_DIR)) images = fs.readdirSync(IMAGES_DIR);
-} catch (e) {
-    console.warn('⚠️ Images folder missing or unreadable, skipping image commands.');
-}
-
-try {
-    if (fs.existsSync(AUDIO_DIR)) audioFiles = fs.readdirSync(AUDIO_DIR);
-} catch (e) {
-    console.warn('⚠️ Audio folder missing or unreadable, skipping audio commands.');
-}
-
-// ----------------- Ping Server -----------------
-const app = express();
-
-app.get('/', (req, res) => {
-    res.send('Ping received. Bot is alive!');
-});
-
-app.listen(PORT, () => {
-    console.log(`📡 Ping server running on port ${PORT}`);
-});
-
-// ----------------- Example Command -----------------
+// --- Message command fallback (optional) ---
 client.on('messageCreate', message => {
+    if (message.author.bot) return;
+
     if (message.content.toLowerCase() === '!ping') {
         message.channel.send('Pong!');
     }
 });
+
+// --- Login ---
+client.login(TOKEN);
