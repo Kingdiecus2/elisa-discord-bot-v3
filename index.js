@@ -1,53 +1,67 @@
-require('dotenv').config(); // load .env locally (ignored in GitHub)
-
-// Discord.js setup
-const { Client, GatewayIntentBits } = require('discord.js');
+// index.js
+require('dotenv').config(); // Only for local testing
 const fs = require('fs');
-const express = require('express'); // only if using webserver for uptime pings
-const app = express();
+const path = require('path');
+const express = require('express');
+const { Client, GatewayIntentBits } = require('discord.js');
+
+// ----------------- Environment Variables -----------------
+const TOKEN = process.env.DISCORD_TOKEN;
 const PORT = process.env.PORT || 10000;
 
-// Initialize client
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildVoiceStates] });
-
-// Load Discord token from environment variable
-const token = process.env.DISCORD_TOKEN;
-if (!token) {
-    console.error('⚠️ DISCORD_TOKEN not set! Please configure environment variables.');
+if (!TOKEN) {
+    console.error('⚠️ DISCORD_TOKEN not set! Set it in environment variables.');
     process.exit(1);
 }
 
-// Handle optional images folder
-let images = [];
-if (fs.existsSync('./images')) {
-    images = fs.readdirSync('./images');
-} else {
-    console.log('Images folder not found, skipping image commands.');
-}
+// ----------------- Discord Bot Setup -----------------
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates]
+});
 
-// Handle optional audio folder
-let audio = [];
-if (fs.existsSync('./audio')) {
-    audio = fs.readdirSync('./audio');
-} else {
-    console.log('Audio folder not found, skipping audio commands.');
-}
-
-// Discord ready
 client.once('ready', () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// Example message command
-client.on('messageCreate', msg => {
-    if (msg.content === '!ping') {
-        msg.reply('Pong!');
-    }
+// Handle login errors
+client.login(TOKEN).catch(err => {
+    console.error('❌ Failed to login. Check your token!', err);
+    process.exit(1);
 });
 
-// Login
-client.login(token);
+// ----------------- Safe folder access -----------------
+const IMAGES_DIR = path.join(__dirname, 'images');
+const AUDIO_DIR = path.join(__dirname, 'audio');
 
-// Simple ping server for uptime
-app.get('/', (req, res) => res.send('Bot is running.'));
-app.listen(PORT, () => console.log(`Ping server running on port ${PORT}`));
+let images = [];
+let audioFiles = [];
+
+try {
+    if (fs.existsSync(IMAGES_DIR)) images = fs.readdirSync(IMAGES_DIR);
+} catch (e) {
+    console.warn('⚠️ Images folder missing or unreadable, skipping image commands.');
+}
+
+try {
+    if (fs.existsSync(AUDIO_DIR)) audioFiles = fs.readdirSync(AUDIO_DIR);
+} catch (e) {
+    console.warn('⚠️ Audio folder missing or unreadable, skipping audio commands.');
+}
+
+// ----------------- Ping Server -----------------
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('Ping received. Bot is alive!');
+});
+
+app.listen(PORT, () => {
+    console.log(`📡 Ping server running on port ${PORT}`);
+});
+
+// ----------------- Example Command -----------------
+client.on('messageCreate', message => {
+    if (message.content.toLowerCase() === '!ping') {
+        message.channel.send('Pong!');
+    }
+});
